@@ -3,11 +3,18 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol, TypeVar
 
+import dask
 from dask.blockwise import Blockwise, BlockwiseDepDict, blockwise_token
 from dask.highlevelgraph import MaterializedLayer
 from dask.layers import DataFrameTreeReduction
 
 from dask_awkward.utils import LazyInputsDict
+
+
+_dask_uses_tasks = hasattr(dask.blockwise, "Task")
+
+if _dask_uses_tasks:
+    from dask.blockwise import Task, TaskRef
 
 
 class AwkwardBlockwiseLayer(Blockwise):
@@ -99,14 +106,20 @@ class AwkwardInputLayer(AwkwardBlockwiseLayer):
             produces_tasks=self.produces_tasks,
         )
 
-        super().__init__(
-            output=self.name,
-            output_indices="i",
-            dsk={name: (self.io_func, blockwise_token(0))},
-            indices=[(io_arg_map, "i")],
-            numblocks={},
-            annotations=None,
-        )
+        super_kwargs: dict[str, Any] = {
+            "output": self.name,
+            "output_indices": "i",
+            "indices": [(io_arg_map, "i")],
+            "numblocks": {},
+            "annotations": None,
+        }
+
+        if _dask_uses_tasks:
+            super_kwargs["task"] = Task(name, self.io_func, TaskRef(blockwise_token(0)))
+        else:
+            super_kwargs["dsk"] = {name: (self.io_func, blockwise_token(0))}
+
+        super().__init__(**super_kwargs)
 
     def __repr__(self) -> str:
         return f"AwkwardInputLayer<{self.output}>"
@@ -120,6 +133,7 @@ class AwkwardInputLayer(AwkwardBlockwiseLayer):
             io_func = self.io_func.project(columns)
         else:
             return self
+
         return AwkwardInputLayer(
             name=self.name,
             inputs=self.inputs,
