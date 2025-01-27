@@ -14,6 +14,7 @@ from dask.base import flatten, tokenize
 from dask.highlevelgraph import HighLevelGraph
 from dask.utils import funcname, is_integer, parse_bytes
 from fsspec.utils import infer_compression
+from packaging.version import parse as parse_version
 
 from dask_awkward.layers.layers import (
     AwkwardBlockwiseLayer,
@@ -34,7 +35,7 @@ from dask_awkward.lib.utils import form_with_unique_keys, render_buffer_key
 if TYPE_CHECKING:
     from dask.array.core import Array as DaskArray
     from dask.bag.core import Bag as DaskBag
-    from dask.dataframe.core import DataFrame as DaskDataFrame
+    from dask.dataframe import DataFrame as DaskDataFrame
     from dask.delayed import Delayed
     from fsspec.spec import AbstractFileSystem
 
@@ -464,9 +465,14 @@ def to_dataframe(
 
     """
     import dask
-    from dask.dataframe.core import DataFrame as DaskDataFrame
-    from dask.dataframe.core import new_dd_object
+    from dask.dataframe import DataFrame as DaskDataFrame
+    from dask.dataframe.core import new_dd_object  # type: ignore
 
+    if parse_version(dask.__version__) >= parse_version("2025"):
+        raise NotImplementedError(
+            "to_dataframe is broken with dask 2025.1.0"
+            "either wait for a fix, or downgrade your dask."
+        )
     if optimize_graph:
         (array,) = dask.optimize(array)
     intermediate = map_partitions(
